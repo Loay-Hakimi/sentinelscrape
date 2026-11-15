@@ -25,10 +25,10 @@
 
 | Capability | Description |
 |-----------|-------------|
-| 🕵️ **Stealth Collection** | Human-behavior simulation with proxy & User-Agent rotation |
-| 🔐 **Encrypted Storage** | AES-256 / Fernet encryption on all harvested data |
-| 🗄️ **Structured Database** | SQLite / PostgreSQL backend with schema-ready output |
-| 📈 **MarTech Ready** | Export to CSV, JSON, or directly feed BI tools |
+| 🕵️ **Stealth Collection** | Proxy & User-Agent rotation with Gaussian jitter delays |
+| 🔐 **Encrypted Storage** | Fernet (default) or optional AES-256-GCM on every stored record |
+| 🗄️ **Structured Database** | SQLite backend with content-hash deduplication (PostgreSQL: roadmap) |
+| 📈 **MarTech Ready** | Export to CSV or JSON (direct BI feed: roadmap) |
 | ⚙️ **Fully Configurable** | YAML-driven pipeline — no code changes for new targets |
 
 ---
@@ -49,10 +49,10 @@
 - Decryption utility included for authorized data retrieval
 
 ### 🗄️ Secure Database Layer
-- SQLite (default) or PostgreSQL backend with normalized schema
-- Automatic deduplication on insert
+- SQLite backend (stdlib `sqlite3`); PostgreSQL is on the roadmap
+- Automatic deduplication on insert via a `UNIQUE` content-hash constraint
 - Timestamped records with source URL, scrape session ID, and data hash
-- Full query interface for filtering, exporting, and reporting
+- Query/export interface for decryption and reporting
 
 ### 📊 Market Intelligence Outputs
 - **Competitor Price Tracking** — Monitor pricing changes across e-commerce targets
@@ -62,8 +62,10 @@
 
 ### 🔧 Modular Pipeline Architecture
 - Each stage (fetch → parse → encrypt → store → export) is an independent, swappable module
-- Built-in support for both static HTML (requests + BeautifulSoup) and dynamic JS-rendered pages (Playwright)
-- Plugin interface for adding custom parsers per target domain
+- Static HTML scraping via `requests` + BeautifulSoup, with an injectable HTTP
+  transport (so the engine runs fully offline in tests)
+- CSS-selector parsing with per-field attribute extraction (`selector@attr`) and
+  optional item-scoped extraction
 
 ---
 
@@ -73,32 +75,33 @@
 sentinelscrape/
 │
 ├── core/
-│   ├── scraper_engine.py       # Request orchestration, session management
-│   ├── stealth_manager.py      # Proxy rotation, UA spoofing, jitter logic
-│   ├── parser.py               # HTML/JSON extraction with CSS & XPath selectors
-│   └── scheduler.py            # Cron-based or event-driven scrape scheduling
+│   ├── scraper_engine.py       # Request orchestration, robots.txt, retries, pagination
+│   ├── stealth_manager.py      # Proxy rotation, UA rotation, Gaussian jitter
+│   └── parser.py               # HTML extraction with CSS selectors (+ @attr support)
 │
 ├── security/
-│   ├── encryptor.py            # AES-256 / Fernet encryption & key management
-│   ├── key_vault.py            # Secure key storage & rotation
-│   └── decryptor.py            # Authorized data retrieval utility
+│   ├── encryptor.py            # Fernet (default) + optional AES-256-GCM engine
+│   ├── key_vault.py            # Key storage, creation & rotation
+│   └── decryptor.py            # Authorized retrieval & key-rotation re-encryption
 │
 ├── storage/
-│   ├── db_manager.py           # SQLite / PostgreSQL interface
-│   ├── schema.sql              # Database schema definitions
-│   └── deduplicator.py         # Hash-based duplicate detection
+│   ├── db_manager.py           # SQLite interface (stdlib sqlite3)
+│   ├── schema.sql              # Database schema
+│   └── deduplicator.py         # SHA-256 content-hash deduplication
 │
 ├── exporters/
 │   ├── csv_exporter.py         # Flat-file export for spreadsheet tools
-│   ├── json_exporter.py        # API-ready structured output
-│   └── dashboard_feed.py       # Live feed for BI tools (Metabase, Grafana)
+│   └── json_exporter.py        # Structured JSON output
 │
 ├── config/
 │   ├── targets.yaml            # Scrape targets & selector definitions
-│   ├── proxies.yaml            # Proxy pool configuration
-│   └── settings.yaml           # Global pipeline settings
+│   └── settings.yaml           # Global pipeline settings (incl. proxy pool)
 │
-├── main.py                     # CLI entrypoint
+├── tests/                      # Offline unit + integration tests (pytest)
+├── benchmarks/
+│   └── benchmark.py            # Reproducible local performance measurements
+│
+├── main.py                     # CLI entrypoint (scrape / export / targets)
 └── requirements.txt
 ```
 
@@ -135,9 +138,7 @@ sentinelscrape/
 ### Prerequisites
 
 - Python `3.10+`
-- pip or Poetry
-- (Optional) PostgreSQL for production deployments
-- (Optional) Playwright for JavaScript-rendered targets
+- pip
 
 ### Clone & Install
 
@@ -149,9 +150,6 @@ python3 -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 
 pip install -r requirements.txt
-
-# Optional: Install Playwright for JS-rendered pages
-playwright install chromium
 ```
 
 ### Dependencies
@@ -159,14 +157,15 @@ playwright install chromium
 ```txt
 requests>=2.31.0          # HTTP client
 beautifulsoup4>=4.12.0    # HTML parsing
-playwright>=1.40.0        # JS-rendered page support
-cryptography>=41.0.0      # AES-256 / Fernet encryption
-sqlalchemy>=2.0.0         # Database ORM
+cryptography>=41.0.0      # Fernet / AES-256-GCM encryption
 pyyaml>=6.0               # Config parsing
-fake-useragent>=1.4.0     # User-Agent rotation
-rich>=13.0.0              # Terminal output
 tenacity>=8.2.0           # Retry logic with exponential backoff
 ```
+
+> Storage uses the Python standard library's `sqlite3` (no ORM dependency), and
+> User-Agent rotation uses a small curated in-repo pool (no third-party UA
+> database). Playwright-based JS rendering and a PostgreSQL backend are on the
+> roadmap, not in this release — see [Roadmap](#-roadmap).
 
 ---
 
@@ -176,17 +175,20 @@ tenacity>=8.2.0           # Retry logic with exponential backoff
 
 ```yaml
 targets:
-  - name: "competitor_store"
-    url: "https://example-store.com/products"
+  - name: "books_demo"
+    url: "https://books.toscrape.com/"
+    # Optional: treat each matching element as one record; fields are extracted
+    # within it. Omit to zip each field's matches positionally.
+    item_selector: "article.product_pod"
+    selectors:
+      title: "h3 a@title"          # "@attr" extracts an attribute instead of text
+      price: "p.price_color"
+      availability: "p.availability"
+      url: "h3 a@href"
     pagination:
       type: "next_button"
-      selector: "a.next-page"
-      max_pages: 10
-    selectors:
-      product_name: "h2.product-title"
-      price: "span.price"
-      rating: "div.rating-value"
-      url: "a.product-link"
+      selector: "li.next a"
+      max_pages: 3
 ```
 
 ### `config/settings.yaml`
@@ -197,50 +199,49 @@ stealth:
   ua_rotation: true
   jitter_min_ms: 800
   jitter_max_ms: 3500
-  requests_per_session: 25
+  respect_robots: true
+  max_retries: 3
 
 encryption:
   algorithm: "fernet"          # Options: fernet, aes256gcm
-  key_path: ".secrets/key.key" # Never commit this file
+  key_path: ".secrets/key.key" # Never commit this file (gitignored)
 
 database:
-  backend: "sqlite"            # Options: sqlite, postgresql
   path: "./data/sentinel.db"
+
+proxies: []                    # e.g. ["http://user:pass@host:port", ...]
 ```
 
 ---
 
 ## 🖥️ Usage
 
-### Run a Full Scrape Job
+### List Configured Targets
 
 ```bash
-python3 main.py --target competitor_store --pages 5
+python main.py targets
+```
+
+### Run a Scrape Job
+
+```bash
+python main.py scrape --target books_demo --pages 2
 ```
 
 ```
-[SentinelScrape] 📊 Market Intelligence Pipeline Started
-[+] Stealth Manager: 12 proxies loaded, UA pool initialized (847 signatures)
-[+] Target: competitor_store — 5 pages scheduled
-[*] Page 1/5 — 24 records extracted — encrypted — stored ✓
-[*] Page 2/5 — 23 records extracted — encrypted — stored ✓
-...
-[✓] Job complete: 118 records | 0 duplicates | 0 failures
-[✓] Export ready: ./exports/competitor_store_20240915.csv
+[SentinelScrape] scraping target 'books_demo' ...
+[SentinelScrape] session 2cedab441b56: 40 scraped | 40 stored | 0 duplicates | 40 total in db
 ```
 
 ### Decrypt & Export Data
 
 ```bash
-python3 main.py --export csv --target competitor_store --decrypt
+python main.py export --format csv --out exports/books.csv
+python main.py export --format json --out exports/books.json
 ```
 
-### Schedule Recurring Jobs
-
-```bash
-# Run daily at 06:00
-python3 main.py --schedule "0 6 * * *" --target competitor_store
-```
+> Scheduling (cron-style recurring jobs) is on the roadmap — for now, schedule
+> `main.py scrape` with your OS scheduler (cron, Task Scheduler, systemd timer).
 
 ---
 
@@ -264,29 +265,65 @@ python3 main.py --schedule "0 6 * * *" --target competitor_store
 - Environment variable support for CI/CD deployments: `SENTINEL_KEY`
 
 ### Data Handling
-- Raw HTML is never persisted — only structured, encrypted records
-- Session logs contain no PII
-- Database file is encrypted at rest when using SQLite WAL mode
+- Raw HTML is never persisted — only structured records
+- Each record's payload is **encrypted at the field/record level** before it
+  touches disk (authenticated Fernet or AES-256-GCM). Note: this is per-record
+  payload encryption, **not** whole-file database encryption — clear-text
+  metadata (session id, source URL, content hash, timestamp) is kept for
+  querying and deduplication
 
 ---
 
 ## 📊 Performance Benchmarks
 
+All numbers below are **real measurements** of the local processing pipeline,
+produced by `python benchmarks/benchmark.py`. Full output and notes are in
+[`benchmarks/RESULTS.md`](benchmarks/RESULTS.md).
+
+Measured on: **Python 3.14.6, win32**. These exclude network throughput, which
+is governed by the configured jitter/rate-limit delays and the target server —
+not by this code.
+
 | Metric | Result |
 |--------|--------|
-| Throughput (with jitter) | ~120–400 records/hour |
-| Encryption overhead per record | < 2ms |
-| Duplicate detection accuracy | 99.97% |
-| Memory footprint (idle) | < 45MB |
+| Fernet encrypt per record | **37.7 µs** (~0.04 ms) |
+| Encrypt+decrypt round-trip per record | **69.9 µs** |
+| Pure crypto+hash processing rate | **~26,000 records/sec** |
+| Storage throughput (durable commit-per-insert) | **~85 records/sec** |
+| Exact-duplicate detection accuracy | **100%** (2000/2000 caught) |
+| Peak Python heap (1k records, tracemalloc) | **~1.0 MB** |
+
+> **Honest caveats:** storage throughput is `fsync`-bound because every row is
+> committed individually for durability — the crypto/hash cost is ~0.04 ms, so
+> batching commits would raise this substantially. Deduplication is
+> deterministic (SHA-256 + `UNIQUE` constraint), so "100%" means exact-duplicate
+> detection by construction — no fuzzy/near-duplicate matching is claimed.
+
+---
+
+## 🧪 Testing
+
+The full suite runs **offline** — the scraper engine's HTTP transport is
+injectable, so no network access is required.
+
+```bash
+pip install pytest
+pytest -q          # 34 tests: security, storage, stealth, parser, engine, pipeline
+```
 
 ---
 
 ## 🗺️ Roadmap
 
+Not yet implemented in this release:
+
+- [ ] Playwright support for JavaScript-rendered pages
+- [ ] PostgreSQL storage backend
+- [ ] Batched inserts (`insert_batch`) to lift the fsync-bound storage ceiling
+- [ ] Built-in scheduler (cron-style recurring jobs)
+- [ ] Direct BI feed exporters (Metabase / Grafana)
 - [ ] Residential proxy pool integration (Bright Data / Oxylabs API)
-- [ ] LLM-powered content summarization on extracted data
 - [ ] Slack / webhook alerts on price change detection
-- [ ] Dockerized deployment with compose file
 - [ ] REST API layer for querying the encrypted database
 
 ---
