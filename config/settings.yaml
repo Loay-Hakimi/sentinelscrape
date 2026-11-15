@@ -1,0 +1,16 @@
+stealth:
+  proxy_rotation: true
+  ua_rotation: true
+  jitter_min_ms: 800
+  jitter_max_ms: 3500
+  respect_robots: true
+  max_retries: 3
+
+encryption:
+  algorithm: "fernet"            # Options: fernet, aes256gcm
+  key_path: ".secrets/key.key"   # Never commit this file (see .gitignore)
+
+database:
+  path: "./data/sentinel.db"
+
+proxies: []                      # e.g. ["http://user:pass@host:port", ...]

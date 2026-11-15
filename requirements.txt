@@ -1,0 +1,5 @@
+requests>=2.31.0          # HTTP client
+beautifulsoup4>=4.12.0    # HTML parsing
+cryptography>=41.0.0      # Fernet / AES-256-GCM encryption
+pyyaml>=6.0               # Config parsing
+tenacity>=8.2.0           # Retry logic with exponential backoff

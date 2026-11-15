@@ -1,0 +1,15 @@
+targets:
+  - name: "books_demo"
+    url: "https://books.toscrape.com/"
+    # Optional: treat each matching element as one record and extract fields
+    # within it. Omit to zip each field's matches positionally.
+    item_selector: "article.product_pod"
+    selectors:
+      title: "h3 a@title"
+      price: "p.price_color"
+      availability: "p.availability"
+      url: "h3 a@href"
+    pagination:
+      type: "next_button"
+      selector: "li.next a"
+      max_pages: 3
