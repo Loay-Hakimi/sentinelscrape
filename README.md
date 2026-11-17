@@ -3,6 +3,7 @@
 # 📊 SentinelScrape
 ### Advanced Stealth Scraper & Market Intelligence Core
 
+[![CI](https://github.com/Loay-Hakimi/sentinelscrape/actions/workflows/ci.yml/badge.svg)](https://github.com/Loay-Hakimi/sentinelscrape/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![License](https://img.shields.io/badge/License-MIT-22C55E?style=for-the-badge)](LICENSE)
 [![MarTech](https://img.shields.io/badge/Domain-MarTech%20%2F%20DataOps-8B5CF6?style=for-the-badge)](https://github.com)
@@ -215,6 +216,30 @@ proxies: []                    # e.g. ["http://user:pass@host:port", ...]
 ---
 
 ## 🖥️ Usage
+
+### ⚡ Quick Demo (offline, no third-party site)
+
+The fastest way to see the whole pipeline work. It spins up a **local mock
+bookstore** (bundled static HTML in [`mocksite/`](mocksite/), served on
+`127.0.0.1`) and runs the real stages against it — HTTP fetch, robots.txt
+compliance, pagination, Fernet encryption, SQLite dedup, CSV/JSON export, and a
+charted **HTML report**. No external website is contacted.
+
+```bash
+python main.py demo --out-dir demo_output
+```
+
+```
+[SentinelScrape] running offline demo against the bundled mock site ...
+[SentinelScrape] scraped 12 records | 12 stored | 0 duplicates
+[+] CSV    : demo_output/records.csv
+[+] JSON   : demo_output/records.json
+[+] Report : demo_output/report.html
+```
+
+Open `demo_output/report.html` to see summary stat cards and dependency-free SVG
+charts (records & average price by category, records by rating and availability)
+— every figure computed from the collected data.
 
 ### List Configured Targets
 
