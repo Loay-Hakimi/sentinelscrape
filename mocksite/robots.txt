@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+# Disallow an admin path to demonstrate robots.txt compliance in the demo.
+Disallow: /admin/

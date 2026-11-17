@@ -4,8 +4,11 @@ Commands:
     scrape   Run a configured target, encrypt and store the results.
     export   Decrypt stored records and export them to CSV or JSON.
     targets  List configured targets.
+    demo     Run the full pipeline offline against a bundled mock site and
+             write CSV/JSON plus a charted HTML report (no third-party site).
 
 Examples:
+    python main.py demo --out-dir demo_output
     python main.py scrape --target books_demo --pages 2
     python main.py export --target books_demo --format csv --out exports/books.csv
     python main.py targets
@@ -124,6 +127,21 @@ def cmd_export(args: argparse.Namespace, settings: dict[str, Any], _targets: dic
     return 0
 
 
+def cmd_demo(args: argparse.Namespace, _settings: dict[str, Any], _targets: dict[str, Target]) -> int:
+    from demo_pipeline import run_demo
+
+    print("[SentinelScrape] running offline demo against the bundled mock site ...")
+    summary = run_demo(args.out_dir, pages=args.pages or 3)
+    print(
+        f"[SentinelScrape] scraped {summary['scraped']} records | "
+        f"{summary['inserted']} stored | {summary['duplicates']} duplicates"
+    )
+    print(f"[+] CSV    : {summary['csv_path']}")
+    print(f"[+] JSON   : {summary['json_path']}")
+    print(f"[+] Report : {summary['html_path']}")
+    return 0
+
+
 def cmd_targets(_args: argparse.Namespace, _settings: dict[str, Any], targets: dict[str, Target]) -> int:
     if not targets:
         print("no targets configured")
@@ -148,6 +166,11 @@ def main(argv: list[str] | None = None) -> int:
     p_export.add_argument("--format", choices=["csv", "json"], default="csv")
     p_export.add_argument("--out", required=True)
     p_export.set_defaults(func=cmd_export)
+
+    p_demo = sub.add_parser("demo", help="run the full pipeline offline against the bundled mock site")
+    p_demo.add_argument("--out-dir", default="demo_output", help="directory for CSV/JSON/report outputs")
+    p_demo.add_argument("--pages", type=int, default=None, help="max mock-site pages to crawl (default 3)")
+    p_demo.set_defaults(func=cmd_demo)
 
     p_targets = sub.add_parser("targets", help="list configured targets")
     p_targets.set_defaults(func=cmd_targets)
